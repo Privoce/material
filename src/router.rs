@@ -1,6 +1,8 @@
 use salvo::{Router, cors::Cors, http::Method};
 
-use crate::api::pdf::{ai_analysis, from_path, split};
+use crate::api::pdf::{workhook, workhook_check};
+
+// use crate::api::pdf::{ai_analysis, from_path, split};
 
 pub fn build() -> Router {
     let cors = Cors::new()
@@ -17,8 +19,13 @@ pub fn build() -> Router {
         .max_age(3600) // 预检请求的缓存时间
         .into_handler();
 
-    Router::with_path("api")
-        .hoop(cors)
-        .push(Router::with_path("pdf").post(from_path).get(split))
-        .push(Router::with_path("ai").get(ai_analysis))
+    // Router::with_path("api")
+    //     .hoop(cors)
+    //     .push(Router::with_path("pdf").post(from_path).get(split))
+    //     .push(Router::with_path("ai").get(ai_analysis))
+    Router::with_path("material").hoop(cors).push(
+        Router::with_path("webhook")
+            .get(workhook_check)
+            .post(workhook),
+    )
 }

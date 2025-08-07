@@ -3,117 +3,111 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use salvo::{
-    Request, Response, handler,
-    http::headers::ContentType,
-    writing::Json,
-};
+use salvo::{Request, Response, handler, http::headers::ContentType, writing::Json};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{
-    ai_analyzer::AiAnalyzer, config::{AiConfig, SamConfig}, pdf_converter::PdfConverterRunner, sam::SamInterface, workflow::create_pdf_analysis_workflow
-};
+use crate::{pdf_converter::PdfConverterRunner, workflow::create_pdf_analysis_workflow};
 
-#[derive(Deserialize, Debug)]
-pub struct PdfPathRequest {
-    pub path: String,
-    pub output: Option<String>,
-}
+// #[derive(Deserialize, Debug)]
+// pub struct PdfPathRequest {
+//     pub path: String,
+//     pub output: Option<String>,
+// }
 
-impl From<PdfPathRequest> for PdfConverterRunner {
-    fn from(value: PdfPathRequest) -> Self {
-        let PdfPathRequest { path, output } = value;
-        PdfConverterRunner::new(path, output)
-    }
-}
+// impl From<PdfPathRequest> for PdfConverterRunner {
+//     fn from(value: PdfPathRequest) -> Self {
+//         let PdfPathRequest { path, output } = value;
+//         PdfConverterRunner::new(path, output)
+//     }
+// }
 
-/// 传入本机的pdf文件路径/文件夹路径，转为png图片并返回处理后的路径
-/// POST /api/pdf_to_png
-/// ```
-/// {
-///   "path": "C:/path/to/pdf/or/folder",
-///   "output": "C:/path/to/output/folder" // 可选参数
-/// }
-/// ```
-#[handler]
-pub async fn from_path(req: &mut Request, res: &mut Response) -> Result<(), ()> {
-    let pdf_request: PdfPathRequest = req.parse_json().await.unwrap();
-    let runner: PdfConverterRunner = pdf_request.into();
-    if let Err(e) = runner.run() {
-        res.render(Json(serde_json::json!({
-            "status": "error",
-            "message": e.to_string(),
-        })));
-        return Err(());
-    }
-    res.render(Json(serde_json::json!({
-        "status": "success",
-        "output": runner.output,
-    })));
-    Ok(())
-}
+// /// 传入本机的pdf文件路径/文件夹路径，转为png图片并返回处理后的路径
+// /// POST /api/pdf_to_png
+// /// ```
+// /// {
+// ///   "path": "C:/path/to/pdf/or/folder",
+// ///   "output": "C:/path/to/output/folder" // 可选参数
+// /// }
+// /// ```
+// #[handler]
+// pub async fn from_path(req: &mut Request, res: &mut Response) -> Result<(), ()> {
+//     let pdf_request: PdfPathRequest = req.parse_json().await.unwrap();
+//     let runner: PdfConverterRunner = pdf_request.into();
+//     if let Err(e) = runner.run() {
+//         res.render(Json(serde_json::json!({
+//             "status": "error",
+//             "message": e.to_string(),
+//         })));
+//         return Err(());
+//     }
+//     res.render(Json(serde_json::json!({
+//         "status": "success",
+//         "output": runner.output,
+//     })));
+//     Ok(())
+// }
 
-/// 对某个pdf文件进行SAM分割
-#[handler]
-pub async fn split(_req: &mut Request, res: &mut Response) -> Result<(), ()> {
-    let sam_interface = SamInterface::new(SamConfig::default());
-    sam_interface
-        .verify_setup()
-        .expect("SAM setup verification failed");
-    match sam_interface
-        .split_image(
-            "D:\\work\\material_rs\\pdfs\\output\\03-jz\\page_0.jpg",
-            Some("D:\\work\\material_rs\\pdfs\\output\\03-jz\\split"),
-        )
-        .await
-    {
-        Ok(result) => {
-            res.render(Json(serde_json::json!({
-                "status": "success",
-                "output": result.output_dir,
-            })));
-        }
-        Err(e) => {
-            res.render(Json(serde_json::json!({
-                "status": "error",
-                "message": format!("SAM splitting failed: {}", e),
-            })));
-        }
-    }
+// /// 对某个pdf文件进行SAM分割
+// #[handler]
+// pub async fn split(_req: &mut Request, res: &mut Response) -> Result<(), ()> {
+//     let sam_interface = SamInterface::new(SamConfig::default());
+//     sam_interface
+//         .verify_setup()
+//         .expect("SAM setup verification failed");
+//     match sam_interface
+//         .split_image(
+//             "D:\\work\\material_rs\\pdfs\\output\\03-jz\\page_0.jpg",
+//             Some("D:\\work\\material_rs\\pdfs\\output\\03-jz\\split"),
+//         )
+//         .await
+//     {
+//         Ok(result) => {
+//             res.render(Json(serde_json::json!({
+//                 "status": "success",
+//                 "output": result.output_dir,
+//             })));
+//         }
+//         Err(e) => {
+//             res.render(Json(serde_json::json!({
+//                 "status": "error",
+//                 "message": format!("SAM splitting failed: {}", e),
+//             })));
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-#[handler]
-pub async fn ai_analysis(_req: &mut Request, res: &mut Response) -> Result<(), ()> {
-    // 创建一个analyzer实例
-    let analyzer = AiAnalyzer::new(AiConfig::default());
-    // "D:\\work\\material_rs\\pdfs\\output\\03-jz\\split\\improved_view_01.png"
-    match analyzer
-        .analyze_single_view(
-            "D:\\work\\material_rs\\pdfs\\output\\03-jz\\page_0.jpg",
-            true,
-        )
-        .await
-    {
-        Ok(result) => {
-            res.render(Json(serde_json::json!({
-                "status": "success",
-                "output": result,
-            })));
-        }
-        Err(e) => {
-            res.render(Json(serde_json::json!({
-                "status": "error",
-                "message": format!("AI analysis failed: {}", e),
-            })));
-            return Err(());
-        }
-    }
+// #[handler]
+// pub async fn ai_analysis(_req: &mut Request, res: &mut Response) -> Result<(), ()> {
+//     // 创建一个analyzer实例
+//     let analyzer = AiAnalyzer::new(AiConfig::default());
+//     // "D:\\work\\material_rs\\pdfs\\output\\03-jz\\split\\improved_view_01.png"
+//     match analyzer
+//         .analyze_single_view(
+//             "D:\\work\\material_rs\\pdfs\\output\\03-jz\\page_0.jpg",
+//             true,
+//         )
+//         .await
+//     {
+//         Ok(result) => {
+//             res.render(Json(serde_json::json!({
+//                 "status": "success",
+//                 "output": result,
+//             })));
+//         }
+//         Err(e) => {
+//             res.render(Json(serde_json::json!({
+//                 "status": "error",
+//                 "message": format!("AI analysis failed: {}", e),
+//             })));
+//             return Err(());
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 // 示例请求体
 // {
@@ -242,11 +236,11 @@ pub async fn workhook(req: &mut Request, _res: &mut Response) -> Result<(), ()> 
                 Ok(pdf_path) => {
                     // 立即返回响应，告知用户正在处理
                     WebhookResponse::new("📄 收到PDF文件，正在分析中，请稍等...").render();
-                    
+
                     // 启动后台分析工作流
-                    let workflow = create_pdf_analysis_workflow(pdf_path);
+                    let workflow = create_pdf_analysis_workflow(pdf_path, &webhook_req);
                     workflow.start_background_analysis();
-                    
+
                     return Ok(());
                 }
                 Err(_) => {

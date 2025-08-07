@@ -1,10 +1,13 @@
 pub mod api;
 mod pdf_converter;
 pub mod router;
+#[allow(dead_code)]
 mod sam;
 pub mod config;
+#[allow(dead_code)]
 mod ai_analyzer;
 mod ai_text_analyzer;
+#[allow(dead_code)]
 mod diff;
 mod workflow;
 
