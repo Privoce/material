@@ -375,6 +375,8 @@ const MD_TEXT: &str = r#"
 ${result_table}
 
 ---
+
+❗若遇到来源文件为`unknown`，说明该文件名称出错，请报告提交该错误
 "#;
 
 /// 将最后的结果转为markdown格式
@@ -391,9 +393,11 @@ pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
             results.len()
         })
         .map(|res| {
+            let file_name = res.source_directory.file_name().and_then(|s| s.to_str()).unwrap_or("unknown");
+
             format!(
                 "| {} | {:.2} |\n",
-                res.source_directory.display(),
+                file_name,
                 res.percentage * 100.0 // 转为百分比
             )
         })

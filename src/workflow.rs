@@ -6,7 +6,7 @@ use crate::{
     ai_text_analyzer::AiTextAnalyzer,
     api::pdf::{convert_to_image, WebhookRequest},
     config::AiConfig,
-    diff::{fmt_diff_result_to_md, ModelJson},
+    diff::{fmt_diff_result_to_md, DiffResult, ModelJson},
 };
 
 /// PDF 分析工作流
@@ -83,6 +83,8 @@ impl PdfAnalysisWorkflow {
 
         let models_dir = current_exe()
             .map_err(|e| format!("获取执行目录失败: {}", e))?
+            .parent()
+            .ok_or("无法获取执行目录的父目录")?
             .join("models")
             .join("jsons");
 
@@ -90,7 +92,8 @@ impl PdfAnalysisWorkflow {
             ModelJson::patch_new(models_dir).map_err(|e| format!("加载模型数据失败: {}", e))?;
 
         let sorted_models = ModelJson::sort(models);
-        let diff_results = ModelJson::diff(sorted_models, model_json);
+        let mut diff_results = ModelJson::diff(sorted_models, model_json);
+        DiffResult::sort(&mut diff_results);
         let response_text = fmt_diff_result_to_md(&diff_results);
 
         info!("✅ 分析完成");
