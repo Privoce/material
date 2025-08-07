@@ -1,0 +1,8 @@
+/target
+/pdfs
+/scripts/__pycache__
+/scripts/sam_vit_b.pth
+/Cargo.lock
+/a.json
+/test.md
+/config.json
