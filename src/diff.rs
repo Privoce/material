@@ -386,7 +386,6 @@ pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
     // 处理表格
     let result_table: String = results
         .iter()
-        .rev()
         .take(if results.len() >= 10 {
             10
         } else {
@@ -396,7 +395,7 @@ pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
             let file_name = res.source_directory.file_name().and_then(|s| s.to_str()).unwrap_or("unknown");
 
             format!(
-                "| {} | {:.2} |\n",
+                "| {} | {:.2}% |\n",
                 file_name,
                 res.percentage * 100.0 // 转为百分比
             )
@@ -427,7 +426,10 @@ mod tests {
         dbg!(models.len());
         let sorted_models = ModelJson::sort(models);
         let mut res = ModelJson::diff(sorted_models, model);
-        res.sort();
+        // res.sort();
+        DiffResult::sort(&mut res);
+        // 
+        let res = fmt_diff_result_to_md(&res);
         dbg!(res);
     }
 
