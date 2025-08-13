@@ -1,5 +1,7 @@
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{collections::HashMap, env::current_exe, fs, io::Cursor, path::PathBuf};
 
+use base64::{Engine, prelude::BASE64_STANDARD};
+use image::ImageReader;
 use serde::{Deserialize, Serialize};
 
 use crate::ai_text_analyzer::TextExtractionResult;
@@ -87,6 +89,11 @@ impl ModelJson {
 
             // 比较材料
             for cmodel in model_info {
+                // 比较source_directory_name，去除一样的
+                if cmodel.source_directory_name == model.source_directory_name {
+                    continue;
+                }
+
                 let cm_len = cmodel.materials.len();
                 let m_len = model.materials.len();
 
@@ -105,6 +112,7 @@ impl ModelJson {
                 if final_percentage > 0.1 {
                     results.push(DiffResult {
                         source_directory: cmodel.source_directory.clone(),
+                        source_name: cmodel.source_directory_name.clone(),
                         percentage: final_percentage,
                     });
                 }
@@ -297,7 +305,7 @@ pub fn diff_text(text1: Vec<String>, text2: Vec<String>) -> f32 {
     let base_length = text1.len().max(text2.len()) as f32;
 
     // 创建较短文本的副本用于标记已匹配的字符
-    let mut shorter_text = if text1.len() <= text2.len() {
+    let shorter_text = if text1.len() <= text2.len() {
         text1.clone()
     } else {
         text2.clone()
@@ -332,6 +340,7 @@ pub fn diff_text(text1: Vec<String>, text2: Vec<String>) -> f32 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffResult {
     pub source_directory: PathBuf,
+    pub source_name: String,
     /// 相似度
     pub percentage: f32,
 }
@@ -368,22 +377,33 @@ impl Ord for DiffResult {
 }
 
 const MD_TEXT: &str = r#"
-❗注意: 相似度是基于模具类型和材料的综合计算结果，值越高表示越相似。当前返回相似度前10的结果。
+❗注意: 相似度是基于模具类型和材料的综合计算结果，值越高表示越相似。我们会返回相似度最高10个结果。
+${result_table}
+❗若遇到来源文件为`unknown`，说明该文件名称出错，请报告提交该错误
+"#;
 
+const MD_TABLE: &str = r#"
 | 来源文件 | 相似度 |
 | --- | --- |
-${result_table}
-
----
-
-❗若遇到来源文件为`unknown`，说明该文件名称出错，请报告提交该错误
+| {$source} | {$percentage}% |
+<img src="data:image/jpeg;base64,${base64_image}" />
 "#;
 
 /// 将最后的结果转为markdown格式
 pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
     let mut md = String::new();
     md.push_str("对该pdf文件进行相似度比较的结果如下:\n");
+    let img_dir = current_exe()
+        .map_err(|e| format!("获取执行目录失败: {}", e))
+        .unwrap()
+        .parent()
+        .ok_or("无法获取执行目录的父目录")
+        .unwrap()
+        .join("models")
+        .join("imgs");
+    dbg!(&img_dir.display());
     // 处理表格
+    // 如果相似度低于50%没有必要处理
     let result_table: String = results
         .iter()
         .take(if results.len() >= 10 {
@@ -391,13 +411,71 @@ pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
         } else {
             results.len()
         })
-        .map(|res| {
-            let file_name = res.source_directory.file_name().and_then(|s| s.to_str()).unwrap_or("unknown");
+        .filter_map(|res| {
+            let img_path = img_dir
+                .join(&res.source_name)
+                .join(format!("{}_page_001.jpg", res.source_name));
+            dbg!(&img_path.display());
+            if !img_path.exists() {
+                return None;
+            }
 
-            format!(
-                "| {} | {:.2}% |\n",
-                file_name,
-                res.percentage * 100.0 // 转为百分比
+            let img = ImageReader::open(img_path).ok()?.decode().ok()?;
+            let mut img_bytes = Vec::new();
+            img.write_to(&mut Cursor::new(&mut img_bytes), image::ImageFormat::Jpeg)
+                .ok()?;
+            let base64_image = BASE64_STANDARD.encode(img_bytes);
+
+            Some(
+                MD_TABLE
+                    .replace("{$source}", &res.source_name)
+                    .replace("{$percentage}", &format!("{:.2}", res.percentage * 100.0))
+                    .replace("${base64_image}", &base64_image),
+            )
+        })
+        .collect();
+
+    md.push_str(
+        &MD_TEXT
+            .to_string()
+            .replace("${result_table}", &result_table),
+    );
+
+    md
+}
+
+fn fmt_diff_test(results: &Vec<DiffResult>) -> String {
+    let mut md = String::new();
+    md.push_str("对该pdf文件进行相似度比较的结果如下:\n");
+    let img_dir = PathBuf::from("D:\\work\\material_rs\\target\\debug\\models\\imgs");
+    // 处理表格
+    // 如果相似度低于50%没有必要处理
+    let result_table: String = results
+        .iter()
+        .take(if results.len() >= 10 {
+            10
+        } else {
+            results.len()
+        })
+        .filter_map(|res| {
+            let img_path = img_dir
+                .join(&res.source_name)
+                .join(format!("{}_page_001.jpg", res.source_name));
+            dbg!(&img_path.display());
+            if !img_path.exists() {
+                return None;
+            }
+            let img = ImageReader::open(img_path).ok()?.decode().ok()?;
+            let mut img_bytes = Vec::new();
+            img.write_to(&mut Cursor::new(&mut img_bytes), image::ImageFormat::Jpeg)
+                .ok()?;
+            let base64_image = BASE64_STANDARD.encode(img_bytes);
+
+            Some(
+                MD_TABLE
+                    .replace("{$source}", &res.source_name)
+                    .replace("{$percentage}", &format!("{:.2}", res.percentage * 100.0))
+                    .replace("${base64_image}", &base64_image),
             )
         })
         .collect();
@@ -417,20 +495,19 @@ mod tests {
 
     #[test]
     fn diff() {
+        // D:\work\material\output\json\208T-03_A基座-A3_Model_1_text_data.json
         let model = ModelJson::new(PathBuf::from(
-            "D:\\work\\material\\output\\json\\010骨架240611-2_text_data.json",
+            "D:\\work\\material\\json\\01-骨架_BRD_1_text_data.json",
         ))
         .unwrap();
-        let models =
-            ModelJson::patch_new(PathBuf::from("D:\\work\\material\\output\\json")).unwrap();
+        let models = ModelJson::patch_new(PathBuf::from("D:\\work\\material\\json")).unwrap();
         dbg!(models.len());
         let sorted_models = ModelJson::sort(models);
         let mut res = ModelJson::diff(sorted_models, model);
-        // res.sort();
         DiffResult::sort(&mut res);
-        // 
-        let res = fmt_diff_result_to_md(&res);
-        dbg!(res);
+        let res = fmt_diff_test(&res);
+        let md_file = "D:\\work\\material_rs\\test.md";
+        fs::write(md_file, res).expect("Failed to write markdown file");
     }
 
     #[test]

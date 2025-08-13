@@ -1,12 +1,13 @@
-use std::{env::current_exe, path::PathBuf};
+use std::path::PathBuf;
 use tokio::task;
 use tracing::{error, info, warn};
 
 use crate::{
+    MODELS,
     ai_text_analyzer::AiTextAnalyzer,
-    api::pdf::{convert_to_image, WebhookRequest},
+    api::pdf::{WebhookRequest, convert_to_image},
     config::AiConfig,
-    diff::{fmt_diff_result_to_md, DiffResult, ModelJson},
+    diff::{DiffResult, ModelJson, fmt_diff_result_to_md},
 };
 
 /// PDF 分析工作流
@@ -81,17 +82,7 @@ impl PdfAnalysisWorkflow {
         info!("📊 正在进行相似度比较...");
         let model_json = ModelJson::from(extraction_result);
 
-        let models_dir = current_exe()
-            .map_err(|e| format!("获取执行目录失败: {}", e))?
-            .parent()
-            .ok_or("无法获取执行目录的父目录")?
-            .join("models")
-            .join("jsons");
-
-        let models =
-            ModelJson::patch_new(models_dir).map_err(|e| format!("加载模型数据失败: {}", e))?;
-
-        let sorted_models = ModelJson::sort(models);
+        let sorted_models = MODELS.clone();
         let mut diff_results = ModelJson::diff(sorted_models, model_json);
         DiffResult::sort(&mut diff_results);
         let response_text = fmt_diff_result_to_md(&diff_results);
@@ -127,8 +118,14 @@ impl PdfAnalysisWorkflow {
 }
 
 /// 创建并启动 PDF 分析工作流
-pub fn create_pdf_analysis_workflow(pdf_path: PathBuf, req: &WebhookRequest) -> PdfAnalysisWorkflow {
-    let webhook_url = format!("https://huateng.voce.chat/api/bot/send_to_user/{}", req.from_uid);
+pub fn create_pdf_analysis_workflow(
+    pdf_path: PathBuf,
+    req: &WebhookRequest,
+) -> PdfAnalysisWorkflow {
+    let webhook_url = format!(
+        "https://huateng.voce.chat/api/bot/send_to_user/{}",
+        req.from_uid
+    );
     let api_key = "e655422b1150390aa9421f534d256e906b685c0d383bcd2a6d43a6510212e07a7b22756964223a322c226e6f6e6365223a2230596b4b4e6e4d336b32674141414141623835646a68562b6b46724542513855227d".to_string();
 
     PdfAnalysisWorkflow::new(pdf_path, webhook_url, api_key)

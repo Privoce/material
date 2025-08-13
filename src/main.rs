@@ -1,5 +1,5 @@
 use material_rs::router;
-use salvo::{Listener, Router, Server, conn::TcpListener};
+use salvo::{Listener, Server, conn::TcpListener};
 
 #[tokio::main]
 async fn main() {
@@ -11,5 +11,3 @@ async fn main() {
     // Start serving requests
     Server::new(acceptor).serve(router::build()).await;
 }
-
-
