@@ -15,14 +15,16 @@ pub struct PdfAnalysisWorkflow {
     pdf_path: PathBuf,
     webhook_url: String,
     api_key: String,
+    link: String,
 }
 
 impl PdfAnalysisWorkflow {
-    pub fn new(pdf_path: PathBuf, webhook_url: String, api_key: String) -> Self {
+    pub fn new(pdf_path: PathBuf, webhook_url: String, api_key: String, link: String) -> Self {
         Self {
             pdf_path,
             webhook_url,
             api_key,
+            link
         }
     }
 
@@ -85,7 +87,7 @@ impl PdfAnalysisWorkflow {
         let sorted_models = MODELS.clone();
         let mut diff_results = ModelJson::diff(sorted_models, model_json);
         DiffResult::sort(&mut diff_results);
-        let response_text = fmt_diff_result_to_md(&diff_results);
+        let response_text = fmt_diff_result_to_md(&diff_results, &self.link);
 
         info!("✅ 分析完成");
         Ok(response_text)
@@ -127,6 +129,9 @@ pub fn create_pdf_analysis_workflow(
         req.from_uid
     );
     let api_key = "e655422b1150390aa9421f534d256e906b685c0d383bcd2a6d43a6510212e07a7b22756964223a322c226e6f6e6365223a2230596b4b4e6e4d336b32674141414141623835646a68562b6b46724542513855227d".to_string();
-
-    PdfAnalysisWorkflow::new(pdf_path, webhook_url, api_key)
+    let link = format!(
+        "https://huateng.voce.chat/#/chat/dm/{}?file_path=",
+        req.target.get(&crate::api::pdf::IdType::UId).unwrap_or(&2),
+    );
+    PdfAnalysisWorkflow::new(pdf_path, webhook_url, api_key, link)
 }

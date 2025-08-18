@@ -26,6 +26,9 @@ pub static MODELS: LazyLock<HashMap<String, Vec<ModelJson>>> = LazyLock::new(|| 
         .parent()
         .ok_or("无法获取执行目录的父目录")
         .unwrap()
+        .join("data")
+        .join("upload")
+        .join("file")
         .join("models")
         .join("jsons");
     let models = ModelJson::patch_new(models_dir).unwrap();
