@@ -391,8 +391,7 @@ const MD_TABLE: &str = r#"
 "#;
 
 /// 将最后的结果转为markdown格式
-pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>, source: &str) -> String {
-    dbg!(source);
+pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
     let mut md = String::new();
     md.push_str("对该pdf文件进行相似度比较的结果如下:\n");
     let img_dir = current_exe()
@@ -434,7 +433,13 @@ pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>, source: &str) -> String 
                     .replace("{$source}", &res.source_name)
                     .replace("{$percentage}", &format!("{:.2}", res.percentage * 100.0))
                     .replace("${base64_image}", &base64_image)
-                    .replace("${href}", &format!("{}{}", source, res.source_name)),
+                    .replace(
+                        "${href}",
+                        &format!(
+                            "https://huateng.voce.chat/#/compare?file_path={}",
+                            res.source_name
+                        ),
+                    ),
             )
         })
         .collect();
@@ -451,7 +456,8 @@ pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>, source: &str) -> String 
 fn fmt_diff_test(results: &Vec<DiffResult>) -> String {
     let mut md = String::new();
     md.push_str("对该pdf文件进行相似度比较的结果如下:\n");
-    let img_dir = PathBuf::from("D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\imgs");
+    let img_dir =
+        PathBuf::from("D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\imgs");
     // 处理表格
     // 如果相似度低于50%没有必要处理
     let result_table: String = results
@@ -508,7 +514,7 @@ mod tests {
         let sorted_models = ModelJson::sort(models);
         let mut res = ModelJson::diff(sorted_models, model);
         DiffResult::sort(&mut res);
-        let res = fmt_diff_result_to_md(&res, "https://huateng.voce.chat/#/chat/dm/2?file_path=");
+        let res = fmt_diff_result_to_md(&res);
         let md_file = "D:\\work\\material_rs\\test.md";
         fs::write(md_file, res).expect("Failed to write markdown file");
     }
