@@ -386,7 +386,7 @@ const MD_TABLE: &str = r#"
 | 来源文件 | 相似度 |
 | --- | --- |
 | {$source} | {$percentage}% |
-<img src="data:image/jpeg;base64,${base64_image}" />
+<img src="data:image/jpeg;base64,${base64_image}" height="400px" />
 <a href="${href}">查看模型</a>
 "#;
 
