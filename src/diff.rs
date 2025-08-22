@@ -443,7 +443,7 @@ pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
                     .replace(
                         "${href}",
                         &format!(
-                            "https://huateng.voce.chat/#/compare?file_path={}",
+                            "http://45.76.31.59:3009/#/compare?file_path={}",
                             res.source_name
                         ),
                     ),
