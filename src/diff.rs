@@ -381,12 +381,12 @@ const MD_TEXT: &str = r#"
 ${result_table}
 ❗若遇到来源文件为`unknown`，说明该文件名称出错，请报告提交该错误
 "#;
-
+// <img src="data:image/jpeg;base64,${base64_image}" height="400px" />
 const MD_TABLE: &str = r#"
 | 来源文件 | 相似度 |
 | --- | --- |
 | {$source} | {$percentage}% |
-<img src="data:image/jpeg;base64,${base64_image}" height="400px" />
+<img src="${img_path}" height="400px" />
 <a href="${href}">查看模型</a>
 "#;
 
@@ -405,6 +405,7 @@ pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
         .join("file")
         .join("models")
         .join("imgs");
+
     // 处理表格
     // 如果相似度低于50%没有必要处理
     let result_table: String = results
@@ -417,22 +418,28 @@ pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
         .filter_map(|res| {
             let img_path = img_dir
                 .join(&res.source_name)
-                .join(format!("{}_page_001.png", res.source_name));
+                .join(format!("{}_page_001", res.source_name));
+
             if !img_path.exists() {
                 return None;
             }
-
-            let img = ImageReader::open(img_path).ok()?.decode().ok()?;
-            let mut img_bytes = Vec::new();
-            img.write_to(&mut Cursor::new(&mut img_bytes), image::ImageFormat::Png)
-                .ok()?;
-            let base64_image = BASE64_STANDARD.encode(img_bytes);
+            // let img = ImageReader::open(img_path).ok()?.decode().ok()?;
+            // let mut img_bytes = Vec::new();
+            // img.write_to(&mut Cursor::new(&mut img_bytes), image::ImageFormat::Png)
+            //     .ok()?;
+            // let base64_image = BASE64_STANDARD.encode(img_bytes);
             // chatdm: format!("https://huateng.voce.chat/#/chat/dm/{}", cmodel.)
             Some(
                 MD_TABLE
                     .replace("{$source}", &res.source_name)
                     .replace("{$percentage}", &format!("{:.2}", res.percentage * 100.0))
-                    .replace("${base64_image}", &base64_image)
+                    .replace(
+                        "${img_path}",
+                        &format!(
+                            "https://huateng.voce.chat/api/resource/file?file_path=models/imgs/{}/{}_page_001",
+                            &res.source_name, &res.source_name
+                        ),
+                    )
                     .replace(
                         "${href}",
                         &format!(
@@ -506,10 +513,13 @@ mod tests {
     fn diff() {
         // D:\work\material\output\json\208T-03_A基座-A3_Model_1_text_data.json
         let model = ModelJson::new(PathBuf::from(
-            "D:\\work\\material\\jsons\\SARN外壳_text_data.json",
+            "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\jsons\\HJ034-2PZL内基座_text_data.json",
         ))
         .unwrap();
-        let models = ModelJson::patch_new(PathBuf::from("D:\\work\\material\\jsons")).unwrap();
+        let models = ModelJson::patch_new(PathBuf::from(
+            "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\jsons",
+        ))
+        .unwrap();
         dbg!(models.len());
         let sorted_models = ModelJson::sort(models);
         let mut res = ModelJson::diff(sorted_models, model);
@@ -630,5 +640,11 @@ mod tests {
 
         println!("分词结果1: {:?}", result);
         println!("分词结果2: {:?}", result2);
+    }
+
+    #[test]
+    fn copy_meta_to_png() {
+        let path = "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\imgs";
+        // 将path下所有文件夹下的图片元数据进行复制并增加后缀名.png
     }
 }
