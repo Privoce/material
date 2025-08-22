@@ -94,6 +94,7 @@ impl PdfConverter {
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("output");
+        dbg!(&self.path.display());
         let pdf = PDF::from_file(&self.path)
             .map_err(|e| AnalyzerError::PdfError(format!("Failed to load PDF: {}", e)))?;
 
