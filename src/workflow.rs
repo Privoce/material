@@ -126,6 +126,6 @@ pub fn create_pdf_analysis_workflow(
         "https://huateng.voce.chat/api/bot/send_to_user/{}",
         req.from_uid
     );
-    let api_key = "e655422b1150390aa9421f534d256e906b685c0d383bcd2a6d43a6510212e07a7b22756964223a322c226e6f6e6365223a2230596b4b4e6e4d336b32674141414141623835646a68562b6b46724542513855227d".to_string();
+    let api_key = "013b93273ce0dc707e4d55a214f0b54a63bde7fe7dc803b4eda52b3bc828975a7b22756964223a322c226e6f6e6365223a223661432f436558557032674141414141646e4b666f2f76412b64774b4b455465227d".to_string();
     PdfAnalysisWorkflow::new(pdf_path, webhook_url, api_key)
 }
