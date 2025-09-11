@@ -1,5 +1,5 @@
-use std::path::PathBuf;
-use tokio::task;
+use std::{path::PathBuf, sync::Arc};
+use tokio::{task, sync::Notify, time::interval};
 use tracing::{error, info, warn};
 
 use crate::{
@@ -15,6 +15,7 @@ pub struct PdfAnalysisWorkflow {
     pdf_path: PathBuf,
     webhook_url: String,
     api_key: String,
+    analysis_complete_notifier: Arc<Notify>,
 }
 
 impl PdfAnalysisWorkflow {
@@ -23,13 +24,57 @@ impl PdfAnalysisWorkflow {
             pdf_path,
             webhook_url,
             api_key,
+            analysis_complete_notifier: Arc::new(Notify::new()),
         }
     }
 
     /// 启动后台分析任务
     pub fn start_background_analysis(self) {
+        // 先发送初始通知
+        let webhook_url = self.webhook_url.clone();
+        let api_key = self.api_key.clone();
+        let notifier = self.analysis_complete_notifier.clone();
+        
+        // 启动分析任务
+        let analysis_task = {
+            let self_clone = PdfAnalysisWorkflow {
+                pdf_path: self.pdf_path.clone(),
+                webhook_url: self.webhook_url.clone(),
+                api_key: self.api_key.clone(),
+                analysis_complete_notifier: self.analysis_complete_notifier.clone(),
+            };
+            task::spawn(async move {
+                self_clone.run_analysis().await;
+            })
+        };
+        
+        // 启动定时通知任务
+        let notification_task = task::spawn(async move {
+            // 发送初始通知
+            Self::send_notification(&webhook_url, &api_key, 
+                "📄 PDF分析已开始，预计需要30秒或更多时间，请耐心等待...").await;
+            
+            let mut counter = 1;
+            let mut interval = interval(std::time::Duration::from_secs(15));
+            
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        let message = format!("⏳ 分析进行中... ({} 分钟) 请继续等待", counter * 15 / 60 + 1);
+                        Self::send_notification(&webhook_url, &api_key, &message).await;
+                        counter += 1;
+                    }
+                    _ = notifier.notified() => {
+                        info!("📢 分析完成，停止定时通知");
+                        break;
+                    }
+                }
+            }
+        });
+        
+        // 确保两个任务都完成
         task::spawn(async move {
-            self.run_analysis().await;
+            let _ = tokio::join!(analysis_task, notification_task);
         });
     }
 
@@ -50,6 +95,9 @@ impl PdfAnalysisWorkflow {
                     .await;
             }
         }
+        
+        // 通知定时任务分析已完成
+        self.analysis_complete_notifier.notify_one();
     }
 
     /// 执行分析逻辑
@@ -112,6 +160,31 @@ impl PdfAnalysisWorkflow {
             }
             Err(e) => {
                 error!("❌ 发送 webhook 失败: {}", e);
+            }
+        }
+    }
+    
+    /// 发送通知消息（静态方法）
+    async fn send_notification(webhook_url: &str, api_key: &str, message: &str) {
+        let client = reqwest::Client::new();
+        
+        match client
+            .post(webhook_url)
+            .header("content-type", "text/plain")
+            .header("x-api-key", api_key)
+            .body(message.to_string())
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    info!("📢 通知已发送: {}", message);
+                } else {
+                    warn!("⚠️ 通知发送失败，状态: {}", response.status());
+                }
+            }
+            Err(e) => {
+                error!("❌ 发送通知失败: {}", e);
             }
         }
     }
