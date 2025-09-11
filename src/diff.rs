@@ -502,7 +502,27 @@ fn fmt_diff_test(results: &Vec<DiffResult>) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
+
+    #[test]
+    fn all_models() {
+        let models = ModelJson::patch_new(PathBuf::from(
+            "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\jsons",
+        ))
+        .unwrap();
+
+        let mut set = HashSet::new();
+
+        for m in models.iter() {
+            for material in &m.materials {
+                set.insert(material.to_string());
+            }
+        }
+
+        println!("{:?}", set);
+    }
 
     #[test]
     fn diff() {
