@@ -386,7 +386,7 @@ const MD_TABLE: &str = r#"
 | 来源文件 | 相似度 |
 | --- | --- |
 | {$source} | {$percentage}% |
-<img src="${img_path}" height="400px" />
+<img src="${img_path}" width="400px" />
 <a href="${href}">查看模型</a>
 "#;
 
@@ -423,12 +423,7 @@ pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
             if !img_path.exists() {
                 return None;
             }
-            // let img = ImageReader::open(img_path).ok()?.decode().ok()?;
-            // let mut img_bytes = Vec::new();
-            // img.write_to(&mut Cursor::new(&mut img_bytes), image::ImageFormat::Png)
-            //     .ok()?;
-            // let base64_image = BASE64_STANDARD.encode(img_bytes);
-            // chatdm: format!("https://huateng.voce.chat/#/chat/dm/{}", cmodel.)
+            
             Some(
                 MD_TABLE
                     .replace("{$source}", &res.source_name)
@@ -513,14 +508,13 @@ mod tests {
     fn diff() {
         // D:\work\material\output\json\208T-03_A基座-A3_Model_1_text_data.json
         let model = ModelJson::new(PathBuf::from(
-            "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\jsons\\HJ034-2PZL内基座_text_data.json",
+            "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\jsons\\ME121基座_text_data.json",
         ))
         .unwrap();
         let models = ModelJson::patch_new(PathBuf::from(
             "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\jsons",
         ))
         .unwrap();
-        dbg!(models.len());
         let sorted_models = ModelJson::sort(models);
         let mut res = ModelJson::diff(sorted_models, model);
         DiffResult::sort(&mut res);
@@ -644,7 +638,7 @@ mod tests {
 
     #[test]
     fn copy_meta_to_png() {
-        let path = "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\imgs";
+        // let path = "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\imgs";
         // 将path下所有文件夹下的图片元数据进行复制并增加后缀名.png
     }
 }
