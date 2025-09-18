@@ -129,11 +129,11 @@ impl PdfAnalysisWorkflow {
         // 5. 转换为 ModelJson 并进行相似度比较
         info!("📊 正在进行相似度比较...");
         let model_json = ModelJson::from(extraction_result);
-
+        let model_json_str = model_json.to_string();
         let sorted_models = MODELS.clone();
         let mut diff_results = ModelJson::diff(sorted_models, model_json);
         DiffResult::sort(&mut diff_results);
-        let response_text = fmt_diff_result_to_md(&diff_results);
+        let response_text = fmt_diff_result_to_md(&diff_results, Some(model_json_str));
 
         info!("✅ 分析完成");
         Ok(response_text)

@@ -3,6 +3,57 @@ use serde::{Deserialize, Serialize};
 
 use crate::ai_text_analyzer::TextExtractionResult;
 
+/// 用户查询结构
+#[derive(Debug, Clone)]
+pub struct UserQuery {
+    pub model_type: Option<String>,
+    pub materials: Vec<String>,
+}
+
+impl UserQuery {
+    /// 解析用户查询字符串
+    /// 支持格式：
+    /// - model_type: 夹板;
+    /// - material: PBT RG301;
+    /// - model_type: 夹板; - material: PBT RG301;
+    /// - material: PBT RG301, PA66 GF30;
+    pub fn parse(input: &str) -> Self {
+        let mut model_type = None;
+        let mut materials = Vec::new();
+        
+        // 按分号分割不同的查询条件
+        for part in input.split(';') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            
+            // 检查是否是 model_type 查询
+            if part.starts_with("- model_type:") || part.starts_with("-model_type:") || part.starts_with("model_type:") {
+                let value_part = part.split(':').nth(1).unwrap_or("").trim();
+                if !value_part.is_empty() {
+                    model_type = Some(value_part.to_string());
+                }
+            }
+            // 检查是否是 material 查询
+            else if part.starts_with("- material:") || part.starts_with("-material:") || part.starts_with("material:") {
+                let value_part = part.split(':').nth(1).unwrap_or("").trim();
+                if !value_part.is_empty() {
+                    // 按逗号分割多个材料
+                    for material in value_part.split(',') {
+                        let material = material.trim();
+                        if !material.is_empty() {
+                            materials.push(material.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        
+        Self { model_type, materials }
+    }
+}
+
 /// 模具类型分组定义
 const MODEL_TYPE_GROUPS: &[&[&str]] = &[
     &["夹板", "底板", "绝缘隔板", "绝缘板", "衔铁托板", "外板", "定位件", "磁体盖", "固定板"],
@@ -11,6 +62,81 @@ const MODEL_TYPE_GROUPS: &[&[&str]] = &[
     &["推杆", "推片", "推动片"],
     &["骨架", "线圈架"],
 ];
+
+/// 材料分组定义 - 按主要材料类型分组
+const MATERIAL_GROUPS: &[&[&str]] = &[
+    // PBT 系列
+    &["PBT", "PBT RG301", "PBT RG530", "PBT 3316", "PBT 4130", "PBT 543", "PBT 1403G6", "PBT 1430", "PBT FR530", "PBT 102G30", "PBT E202G30", "PBT 201G20", "PBT 5010GN6", "PBT R212G30GT", "PBT T102G30"],
+    // PET 系列  
+    &["PET", "PET FR530", "PET RG301", "PET RG305", "PET T102G30", "PET FRG30", "PET EMC", "PET FG550", "PET FR830", "PET-FR530", "PET-FR531", "PET FR533NH", "PET FRF520"],
+    // PA66 系列 (尼龙66)
+    &["PA66", "尼龙 PA66", "PA66 RG301", "PA66 NPG30", "PA66 K225-KS", "PA66 FR50", "PA66 RG251", "PA66 EPR27", "PA66 T303", "PA66 A3", "PA66+GF", "PA66-B30"],
+    // PA6 系列 (尼龙6)
+    &["PA6", "尼龙 PA6", "PA6 C0-FKGS6", "PA6 K-FKGS6", "PA6-GF30", "PA6 GF30"],
+    // PA46 系列
+    &["PA46", "PA46-GF30", "PA46 TE250F6", "PA46 TE250F8"],
+    // PC 系列 (聚碳酸酯)
+    &["PC", "PC 3001-33201", "PC PC3001-33201L", "PC 121R", "PC FR7"],
+    // LCP 系列 (液晶聚合物)
+    &["LCP", "LCP-4008", "LCP E4008", "LCP E130i"],
+    // PPS 系列 (聚苯硫醚)
+    &["PPS", "PPS R-7", "PPS B4200", "PPS 6165", "PPS 4500", "PPS R-4"],
+    // 其他特殊材料
+    &["PPA", "PEI", "PTFE", "PA4T", "TPE", "磁钢", "衔铁", "再生材"],
+];
+
+/// 标准化材料名称，提取主要材料类型和型号
+fn normalize_material_name(material: &str) -> (String, String) {
+    let material = material.trim();
+    let material_upper = material.to_uppercase();
+    
+    // 移除常见的颜色和属性描述
+    let color_keywords = ["黑色", "白色", "本色", "蓝色", "绿色", "BLACK", "WHITE", "BK", "BL", "WH"];
+    let property_keywords = ["阻燃", "FR", "UL94", "V-0", "ROHS", "防紫外线", "GF", "BY", "DUPONT", "DSM", "帝斯曼", "金发", "南亚", "东方", "沙伯基础", "美国杜邦"];
+    
+    let mut base_material = material_upper.clone();
+    
+    // 移除颜色描述
+    for color in &color_keywords {
+        base_material = base_material.replace(color, "").trim().to_string();
+    }
+    
+    // 移除属性描述
+    for prop in &property_keywords {
+        base_material = base_material.replace(prop, "").trim().to_string();
+    }
+    
+    // 移除括号内容
+    if let Some(paren_pos) = base_material.find('(') {
+        base_material = base_material[..paren_pos].trim().to_string();
+    }
+    
+    // 提取主要材料类型
+    let main_type = if base_material.starts_with("PBT") {
+        "PBT".to_string()
+    } else if base_material.starts_with("PET") {
+        "PET".to_string()
+    } else if base_material.contains("PA66") || base_material.contains("尼龙 PA66") {
+        "PA66".to_string()
+    } else if base_material.contains("PA6") || base_material.contains("尼龙 PA6") {
+        "PA6".to_string()
+    } else if base_material.starts_with("PA46") {
+        "PA46".to_string()
+    } else if base_material.starts_with("PC") {
+        "PC".to_string()
+    } else if base_material.starts_with("LCP") {
+        "LCP".to_string()
+    } else if base_material.starts_with("PPS") {
+        "PPS".to_string()
+    } else {
+        // 对于其他材料，取第一个单词作为主类型
+        base_material.split_whitespace().next().unwrap_or("UNKNOWN").to_string()
+    };
+    
+    // 清理并返回完整的标准化名称和主类型
+    let normalized_full = base_material.replace("  ", " ").trim().to_string();
+    (main_type, normalized_full)
+}
 
 /// 标准化模具类型名称，去除前缀后缀
 fn normalize_model_type(model_type: &str) -> String {
@@ -114,6 +240,12 @@ pub struct ModelJson {
     pub source_directory: PathBuf,
     pub source_directory_name: String,
     pub extraction_timestamp: Option<String>,
+}
+
+impl ToString for ModelJson {
+    fn to_string(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
+    }
 }
 
 impl From<TextExtractionResult> for ModelJson {
@@ -221,6 +353,125 @@ impl ModelJson {
 
         results
     }
+
+    /// 根据模具类型搜索
+    pub fn search_model_type<'a>(models: &'a [Self], query_type: &str) -> Vec<&'a Self> {
+        models
+            .iter()
+            .filter(|model| {
+                if let Some(model_type) = &model.model_type {
+                    // 使用改进的相似度计算
+                    let similarity = calculate_model_type_similarity(model_type, query_type);
+                    similarity > 0.5 // 相似度阈值
+                } else {
+                    false
+                }
+            })
+            .collect()
+    }
+
+    /// 根据材料搜索
+    pub fn search_materials<'a>(models: &'a [Self], query_materials: &[String]) -> Vec<&'a Self> {
+        models
+            .iter()
+            .filter(|model| {
+                if model.materials.is_empty() || query_materials.is_empty() {
+                    return false;
+                }
+                
+                // 计算材料相似度
+                let similarity = calculate_material_similarity(&model.materials, query_materials);
+                similarity > 0.3 // 材料相似度阈值
+            })
+            .collect()
+    }
+
+    /// 综合搜索（模具类型和材料）
+    pub fn search_combined<'a>(models: &'a [Self], query: &UserQuery) -> Vec<&'a Self> {
+        models
+            .iter()
+            .filter(|model| {
+                let mut type_match = true;
+                let mut material_match = true;
+                
+                // 检查模具类型匹配
+                if let Some(query_type) = &query.model_type {
+                    if let Some(model_type) = &model.model_type {
+                        let similarity = calculate_model_type_similarity(model_type, query_type);
+                        type_match = similarity > 0.5;
+                    } else {
+                        type_match = false;
+                    }
+                }
+                
+                // 检查材料匹配
+                if !query.materials.is_empty() {
+                    if !model.materials.is_empty() {
+                        let similarity = calculate_material_similarity(&model.materials, &query.materials);
+                        material_match = similarity > 0.3;
+                    } else {
+                        material_match = false;
+                    }
+                }
+                
+                type_match && material_match
+            })
+            .collect()
+    }
+}
+
+/// 格式化搜索结果为 Markdown 表格
+pub fn format_search_results_to_md(results: &[&ModelJson]) -> String {
+    if results.is_empty() {
+        return "未找到匹配的模具数据。".to_string();
+    }
+    
+    let mut md = String::new();
+    md.push_str("| 名称 | 模具类型 | 材料 |\n");
+    md.push_str("|--|--|--|\n");
+    
+    for model in results.iter().take(20) { // 限制最多显示20条结果
+        let name = &model.source_directory_name;
+        let model_type = model.model_type.as_deref().unwrap_or("未知");
+        let materials = if model.materials.is_empty() {
+            "无".to_string()
+        } else {
+            model.materials.join(", ")
+        };
+        
+        md.push_str(&format!("| {} | {} | {} |\n", name, model_type, materials));
+    }
+    
+    if results.len() > 20 {
+        md.push_str(&format!("\n*注: 仅显示前20条结果，共找到{}条记录*\n", results.len()));
+    }
+    
+    md
+}
+
+/// 处理用户查询并返回 Markdown 格式结果
+pub fn handle_user_search(models: &[ModelJson], query_text: &str) -> String {
+    let query = UserQuery::parse(query_text);
+    
+    let results = if query.model_type.is_some() && !query.materials.is_empty() {
+        // 综合搜索
+        ModelJson::search_combined(models, &query)
+    } else if let Some(model_type) = &query.model_type {
+        // 仅搜索模具类型
+        ModelJson::search_model_type(models, model_type)
+    } else if !query.materials.is_empty() {
+        // 仅搜索材料
+        ModelJson::search_materials(models, &query.materials)
+    } else {
+        // 无效查询
+        return "查询格式错误，请参考以下格式：\n\
+1. 查找类型：`- model_type: 夹板;`\n\
+2. 查找材料：`- material: PBT RG301;`\n\
+3. 查找类型和材料：`- model_type: 夹板; - material: PBT RG301;`\n\
+4. 多个材料：`- material: PBT RG301, PA66 GF30;`".to_string();
+    };
+    
+    format_search_results_to_md(&results)
 }
 
 /// 改进的文本相似度计算，优先全词匹配
@@ -321,7 +572,7 @@ pub fn diff_text_tokens(tokens1: Vec<String>, tokens2: Vec<String>) -> f32 {
     matched_count as f32 / tokens1.len().max(tokens2.len()) as f32
 }
 
-/// 计算材料列表的相似度
+/// 计算材料列表的相似度 - 改进版本，基于材料分组和精确匹配
 pub fn calculate_material_similarity(materials1: &[String], materials2: &[String]) -> f32 {
     if materials1.is_empty() || materials2.is_empty() {
         return 0.0;
@@ -342,35 +593,122 @@ pub fn calculate_material_similarity(materials1: &[String], materials2: &[String
         return 0.0;
     }
 
+    // 标准化材料
+    let normalized1: Vec<(String, String)> = valid_materials1
+        .iter()
+        .map(|m| normalize_material_name(m))
+        .collect();
+    
+    let normalized2: Vec<(String, String)> = valid_materials2
+        .iter()
+        .map(|m| normalize_material_name(m))
+        .collect();
+
     let mut total_similarity = 0.0;
-    let mut match_count = 0;
+    let mut exact_matches = 0;
+    let mut type_matches = 0;
 
-    // 为每个材料找到最佳匹配
-    for material1 in &valid_materials1 {
+    // 为每个材料在第一个列表中找到最佳匹配
+    for (main_type1, full_name1) in &normalized1 {
         let mut best_similarity = 0.0f32;
+        let mut found_exact = false;
+        let mut found_type = false;
 
-        for material2 in &valid_materials2 {
-            let similarity = improved_diff_text(material1, material2);
-            best_similarity = best_similarity.max(similarity);
+        for (main_type2, full_name2) in &normalized2 {
+            // 1. 精确匹配 (去除颜色后的完整名称相同)
+            if full_name1 == full_name2 {
+                best_similarity = 1.0;
+                found_exact = true;
+                break;
+            }
+            
+            // 2. 主材料类型匹配且型号相似
+            if main_type1 == main_type2 {
+                found_type = true;
+                // 对于同类型材料，比较具体型号
+                let similarity = calculate_material_type_similarity(full_name1, full_name2);
+                best_similarity = best_similarity.max(similarity);
+            }
         }
 
-        // 只有相似度超过阈值才计入
-        if best_similarity > 0.2 {
+        if found_exact {
+            exact_matches += 1;
+            total_similarity += 1.0;
+        } else if found_type && best_similarity > 0.7 {
+            // 同类型且高相似度才算匹配
+            type_matches += 1;
             total_similarity += best_similarity;
-            match_count += 1;
         }
+        // 如果连主材料类型都不匹配，则不计入相似度
     }
 
-    if match_count == 0 {
+    let total_matches = exact_matches + type_matches;
+    if total_matches == 0 {
         return 0.0;
     }
 
-    // 平均相似度，但要考虑匹配比例
-    let avg_similarity = total_similarity / match_count as f32;
-    let match_ratio =
-        match_count as f32 / valid_materials1.len().max(valid_materials2.len()) as f32;
+    // 计算平均相似度，并考虑匹配比例
+    let avg_similarity = total_similarity / total_matches as f32;
+    let match_ratio = total_matches as f32 / normalized1.len().max(normalized2.len()) as f32;
 
-    avg_similarity * match_ratio
+    // 精确匹配权重更高
+    let exact_weight = exact_matches as f32 / total_matches as f32;
+    let final_similarity = avg_similarity * match_ratio;
+    
+    // 如果有精确匹配，提升整体相似度
+    if exact_matches > 0 {
+        final_similarity * (0.8 + 0.2 * exact_weight)
+    } else {
+        final_similarity * 0.8 // 仅类型匹配的降权
+    }
+}
+
+/// 计算同类型材料的具体相似度
+fn calculate_material_type_similarity(material1: &str, material2: &str) -> f32 {
+    // 对于同主类型的材料，进行更细致的比较
+    
+    // 1. 完全相同
+    if material1 == material2 {
+        return 1.0;
+    }
+    
+    // 2. 提取材料型号进行比较
+    let tokens1: Vec<&str> = material1.split_whitespace().collect();
+    let tokens2: Vec<&str> = material2.split_whitespace().collect();
+    
+    if tokens1.is_empty() || tokens2.is_empty() {
+        return 0.0;
+    }
+    
+    // 如果第一个token（主材料类型）相同
+    if tokens1[0] == tokens2[0] {
+        // 比较后续的型号部分
+        let remaining1: Vec<&str> = tokens1.iter().skip(1).cloned().collect();
+        let remaining2: Vec<&str> = tokens2.iter().skip(1).cloned().collect();
+        
+        if remaining1.is_empty() && remaining2.is_empty() {
+            return 1.0; // 都只有主类型，完全匹配
+        }
+        
+        if remaining1.is_empty() || remaining2.is_empty() {
+            return 0.8; // 一个有型号一个没有，部分匹配
+        }
+        
+        // 比较型号的相似度
+        let type_similarity = improved_diff_text(&remaining1.join(" "), &remaining2.join(" "));
+        
+        // 对于同主类型，型号相似度要求更高
+        if type_similarity > 0.8 {
+            return 0.9 + type_similarity * 0.1;
+        } else if type_similarity > 0.5 {
+            return 0.7 + type_similarity * 0.2;
+        } else {
+            return type_similarity * 0.5; // 型号差异太大，降权
+        }
+    }
+    
+    // 不同主类型，相似度很低
+    0.1
 }
 
 /// 判断是否为无效材料
@@ -490,8 +828,20 @@ const MD_TABLE: &str = r#"
 <a href="${href}">查看模型</a>
 "#;
 
+const NO_RESULT_TEXT: &str = r#"
+未找到相似的模具文件，可能是该模具类型或材料较为特殊或AI识别有误，建议手动检查。
+```
+${model_data}
+```
+您可以直接使用以下方式让AI BOT帮您进行搜索：
+1. 查找类型：`- model_type: 夹板;`
+2. 查找材料：`- material: PBT RG301;`
+3. 查找类型和材料：`- model_type: 夹板; - material: PBT RG301;`
+4. 多个材料：`- material: PBT RG301, PA66 GF30;`
+"#;
+
 /// 将最后的结果转为markdown格式
-pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
+pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>, model_data: Option<String>) -> String {
     let mut md = String::new();
     md.push_str("对该pdf文件进行相似度比较的结果如下:\n");
     let img_dir = current_exe()
@@ -546,11 +896,21 @@ pub fn fmt_diff_result_to_md(results: &Vec<DiffResult>) -> String {
         })
         .collect();
 
-    md.push_str(
+    if result_table.is_empty() {
+        // 如果没有有效结果，返回提示信息
+        md.push_str(
+            &NO_RESULT_TEXT
+                .to_string()
+                .replace("${model_data}", model_data.as_deref().unwrap_or("无")),
+        );
+
+    }else{
+        md.push_str(
         &MD_TEXT
             .to_string()
             .replace("${result_table}", &result_table),
     );
+    }
 
     md
 }
@@ -809,6 +1169,137 @@ mod tests {
         println!("HAT904G 基座 vs 基座-047: {}", sim4);
         println!("衔铁组件 vs 推杆: {}", sim5);
         println!("底板 vs 线圈架: {}", sim6);
+    }
+
+    #[test]
+    fn test_user_query_parse() {
+        // 测试解析模具类型查询
+        let query1 = UserQuery::parse("- model_type: 夹板;");
+        assert_eq!(query1.model_type, Some("夹板".to_string()));
+        assert!(query1.materials.is_empty());
+        
+        // 测试解析材料查询
+        let query2 = UserQuery::parse("- material: PBT RG301;");
+        assert!(query2.model_type.is_none());
+        assert_eq!(query2.materials, vec!["PBT RG301"]);
+        
+        // 测试解析综合查询
+        let query3 = UserQuery::parse("- model_type: 夹板; - material: PBT RG301;");
+        assert_eq!(query3.model_type, Some("夹板".to_string()));
+        assert_eq!(query3.materials, vec!["PBT RG301"]);
+        
+        // 测试解析多个材料
+        let query4 = UserQuery::parse("- material: PBT RG301, PA66 GF30;");
+        assert!(query4.model_type.is_none());
+        assert_eq!(query4.materials, vec!["PBT RG301", "PA66 GF30"]);
+        
+        // 测试不同格式
+        let query5 = UserQuery::parse("model_type: 基座; material: ABS;");
+        assert_eq!(query5.model_type, Some("基座".to_string()));
+        assert_eq!(query5.materials, vec!["ABS"]);
+    }
+
+    #[test]
+    fn test_search_functionality() {
+        // 创建测试数据
+        let models = vec![
+            ModelJson {
+                model_type: Some("基座".to_string()),
+                materials: vec!["PBT-RG301".to_string(), "ABS".to_string()],
+                project_name: Some("项目A".to_string()),
+                source_directory: PathBuf::from("test1"),
+                source_directory_name: "test1".to_string(),
+                extraction_timestamp: None,
+            },
+            ModelJson {
+                model_type: Some("外壳".to_string()),
+                materials: vec!["PA66".to_string()],
+                project_name: Some("项目B".to_string()),
+                source_directory: PathBuf::from("test2"),
+                source_directory_name: "test2".to_string(),
+                extraction_timestamp: None,
+            },
+            ModelJson {
+                model_type: Some("上基座".to_string()),
+                materials: vec!["PBT-RG302".to_string()],
+                project_name: Some("项目C".to_string()),
+                source_directory: PathBuf::from("test3"),
+                source_directory_name: "test3".to_string(),
+                extraction_timestamp: None,
+            },
+        ];
+        
+        // 测试按类型搜索
+        let type_results = ModelJson::search_model_type(&models, "基座");
+        assert!(type_results.len() >= 1); // 应该找到基座和上基座
+        
+        // 测试按材料搜索
+        let material_results = ModelJson::search_materials(&models, &vec!["PBT".to_string()]);
+        assert!(material_results.len() >= 1); // 应该找到包含PBT的材料
+        
+        // 测试综合搜索
+        let query = UserQuery {
+            model_type: Some("基座".to_string()),
+            materials: vec!["PBT".to_string()],
+        };
+        let combined_results = ModelJson::search_combined(&models, &query);
+        assert!(!combined_results.is_empty());
+        
+        println!("类型搜索结果: {}", type_results.len());
+        println!("材料搜索结果: {}", material_results.len());
+        println!("综合搜索结果: {}", combined_results.len());
+    }
+
+    #[test]
+    fn test_format_search_results() {
+        let models = vec![
+            ModelJson {
+                model_type: Some("基座".to_string()),
+                materials: vec!["PBT-RG301".to_string()],
+                project_name: None,
+                source_directory: PathBuf::from("test1"),
+                source_directory_name: "test1".to_string(),
+                extraction_timestamp: None,
+            },
+        ];
+        
+        let model_refs: Vec<&ModelJson> = models.iter().collect();
+        let md_result = format_search_results_to_md(&model_refs);
+        
+        assert!(md_result.contains("| 名称 | 模具类型 | 材料 |"));
+        assert!(md_result.contains("test1"));
+        assert!(md_result.contains("基座"));
+        assert!(md_result.contains("PBT-RG301"));
+        
+        println!("格式化结果:\n{}", md_result);
+    }
+
+    #[test]
+    fn test_text_search_combine() {
+        let models = ModelJson::patch_new(PathBuf::from(
+            "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\jsons",
+        ))
+        .unwrap();
+        // let sorted_models = ModelJson::sort(models);
+        let query_text = "- model_type: 基座; - material: PBT RG301;";
+        let UserQuery { model_type, materials } = UserQuery::parse(query_text);
+        let res = ModelJson::search_combined(models.as_ref(), &UserQuery { model_type, materials });
+        let md_res = format_search_results_to_md(&res);
+        dbg!(&md_res);
+    }
+
+    #[test]
+    fn test_text_search_material() {
+        let models = ModelJson::patch_new(PathBuf::from(
+            "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\jsons",
+        ))
+        .unwrap();
+        // let sorted_models = ModelJson::sort(models);
+        let query_text = "- material: PBT RG301;";
+        let UserQuery {  materials, .. } = UserQuery::parse(query_text);
+        let res = ModelJson::search_materials(models.as_ref(), &materials);
+        let md_res = format_search_results_to_md(&res);
+        dbg!(&md_res);
     }
 
     #[test]
