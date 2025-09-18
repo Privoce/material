@@ -7,7 +7,7 @@ use crate::{
     ai_text_analyzer::AiTextAnalyzer,
     api::pdf::{WebhookRequest, convert_to_image},
     config::AiConfig,
-    diff::{DiffResult, ModelJson, fmt_diff_result_to_md},
+    diff::{DiffResult, ModelJson, fmt_diff_result_to_md, UserQuery, search_similar_results},
 };
 
 /// PDF 分析工作流
@@ -201,4 +201,102 @@ pub fn create_pdf_analysis_workflow(
     );
     let api_key = "013b93273ce0dc707e4d55a214f0b54a63bde7fe7dc803b4eda52b3bc828975a7b22756964223a322c226e6f6e6365223a223661432f436558557032674141414141646e4b666f2f76412b64774b4b455465227d".to_string();
     PdfAnalysisWorkflow::new(pdf_path, webhook_url, api_key)
+}
+
+/// 文本分析工作流
+pub struct TextAnalysisWorkflow {
+    search_text: String,
+    webhook_url: String,
+    api_key: String,
+}
+
+impl TextAnalysisWorkflow {
+    pub fn new(search_text: String, webhook_url: String, api_key: String) -> Self {
+        Self {
+            search_text,
+            webhook_url,
+            api_key,
+        }
+    }
+
+    /// 启动后台搜索任务
+    pub fn start_background_search(self) {
+        task::spawn(async move {
+            self.run_search().await;
+        });
+    }
+
+    /// 执行搜索流程
+    async fn run_search(self) {
+        info!("开始文本搜索: {}", self.search_text);
+
+        let result = self.perform_search().await;
+
+        match result {
+            Ok(response_text) => {
+                info!("✅ 搜索完成，发送结果");
+                self.send_response(&response_text).await;
+            }
+            Err(error_msg) => {
+                error!("❌ 搜索失败: {}", error_msg);
+                self.send_response(&format!("❌ 搜索失败: {}", error_msg))
+                    .await;
+            }
+        }
+    }
+
+    /// 执行搜索逻辑
+    async fn perform_search(&self) -> Result<String, String> {
+        info!("🔍 正在解析搜索查询...");
+        let user_query = UserQuery::parse(&self.search_text);
+        
+        // 检查是否为有效的搜索查询
+        if user_query.model_type.is_none() && user_query.materials.is_empty() {
+            return Ok("🔍 请使用以下格式进行搜索：\n- model_type: 基座;\n- material: PBT RG301;\n\n或组合搜索：\n- model_type: 基座; - material: PBT RG301;".to_string());
+        }
+
+        info!("📊 正在执行搜索...");
+        let result = search_similar_results(&user_query)?;
+        
+        info!("✅ 搜索完成");
+        Ok(result)
+    }
+
+    /// 发送响应到 webhook
+    async fn send_response(&self, content: &str) {
+        let client = reqwest::Client::new();
+
+        match client
+            .post(&self.webhook_url)
+            .header("content-type", "text/markdown")
+            .header("x-api-key", &self.api_key)
+            .body(content.to_string())
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    info!("✅ 搜索结果已成功发送到 webhook");
+                } else {
+                    warn!("⚠️ Webhook 响应状态: {}", response.status());
+                }
+            }
+            Err(e) => {
+                error!("❌ 发送 webhook 失败: {}", e);
+            }
+        }
+    }
+}
+
+/// 创建并启动文本分析工作流
+pub fn create_text_analysis_workflow(
+    search_text: String,
+    req: &WebhookRequest,
+) -> TextAnalysisWorkflow {
+    let webhook_url = format!(
+        "https://huateng.voce.chat/api/bot/send_to_user/{}",
+        req.from_uid
+    );
+    let api_key = "013b93273ce0dc707e4d55a214f0b54a63bde7fe7dc803b4eda52b3bc828975a7b22756964223a322c226e6f6e6365223a223661432f436558557032674141414141646e4b666f2f76412b64774b4b455465227d".to_string();
+    TextAnalysisWorkflow::new(search_text, webhook_url, api_key)
 }

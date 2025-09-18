@@ -7,7 +7,10 @@ use salvo::{Request, Response, handler, http::headers::ContentType, writing::Jso
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{pdf_converter::PdfConverterRunner, workflow::create_pdf_analysis_workflow};
+use crate::{
+    pdf_converter::PdfConverterRunner,
+    workflow::{create_pdf_analysis_workflow, create_text_analysis_workflow},
+};
 
 // 示例请求体
 // {
@@ -33,6 +36,8 @@ use crate::{pdf_converter::PdfConverterRunner, workflow::create_pdf_analysis_wor
 // }
 
 const CONTENT_TYPE_VOCECHAT: &str = "vocechat/file";
+const CONTENT_TYPE_TEXT_PLAIN: &str = "text/plain";
+const CONTENT_TYPE_TEXT_MARKDOWN: &str = "text/markdown";
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum IdType {
     #[serde(rename = "uid")]
@@ -58,7 +63,7 @@ pub struct WebhookReqDetail {
     pub content: PathBuf,
     pub content_type: String,
     pub expires_in: Option<i64>,
-    pub properties: HashMap<String, Value>,
+    pub properties: Option<HashMap<String, Value>>,
     #[serde(rename = "type")]
     pub ty: String,
 }
@@ -68,13 +73,33 @@ impl WebhookReqDetail {
         self.content_type == CONTENT_TYPE_VOCECHAT
             && self
                 .properties
-                .get("content_type")
+                .as_ref()
+                .and_then(|props| props.get("content_type"))
                 .and_then(|v| v.as_str())
                 .map_or(false, |ct| ct == "application/pdf")
     }
+
+    pub fn is_text_message(&self) -> bool {
+        self.content_type == CONTENT_TYPE_TEXT_PLAIN
+            || self.content_type == CONTENT_TYPE_TEXT_MARKDOWN
+    }
+
+    pub fn get_text_content(&self) -> Option<String> {
+        if self.is_text_message() {
+            // content字段在文本消息中包含实际的文本内容
+            self.content.to_str().map(|s| s.to_string())
+        } else {
+            None
+        }
+    }
+
     pub fn pdf_path(&self) -> Result<PathBuf, String> {
         // prefix: data/upload/file/${content}
-        let current_exe = std::env::current_exe().map_err(|e| e.to_string())?.parent().unwrap().to_path_buf();
+        let current_exe = std::env::current_exe()
+            .map_err(|e| e.to_string())?
+            .parent()
+            .unwrap()
+            .to_path_buf();
         // 对这个self.content进行处理，分割`/`或`\`转为PathBuf
         let content_path = self
             .content
@@ -83,7 +108,7 @@ impl WebhookReqDetail {
                 acc.push(comp);
                 acc
             });
-        
+
         let meta_file = current_exe
             .join("data")
             .join("upload")
@@ -104,7 +129,11 @@ impl WebhookReqDetail {
 }
 
 pub fn convert_to_image(path: &Path) -> Result<PathBuf, String> {
-    let current_exe = std::env::current_exe().map_err(|e| e.to_string())?.parent().unwrap().to_path_buf();
+    let current_exe = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .unwrap()
+        .to_path_buf();
     let output_dir = current_exe.join("output");
     let name = path.file_stem().ok_or("Invalid PDF file name")?;
     let runner = PdfConverterRunner::new(path, Some(output_dir));
@@ -158,13 +187,12 @@ impl WebhookResponse {
 #[handler]
 pub async fn workhook(req: &mut Request, res: &mut Response) -> Result<(), ()> {
     if let Ok(webhook_req) = req.parse_json::<WebhookRequest>().await {
-        // 获取到 webhook 请求体之后判断是否为pdf文件
+        // 检查是否为PDF文件
         if webhook_req.detail.is_pdf() {
             // 处理pdf文件，立即返回"正在处理"响应，然后在后台处理
             match webhook_req.detail.pdf_path() {
                 Ok(pdf_path) => {
                     // 立即返回响应，告知用户正在处理
-                    // WebhookResponse::new("📄 收到PDF文件，正在分析中，请稍等...").render().await;
                     res.render(Json(serde_json::json!({
                         "status": 200,
                         "message": "📄 收到PDF文件，正在分析中，请稍等..."
@@ -176,7 +204,6 @@ pub async fn workhook(req: &mut Request, res: &mut Response) -> Result<(), ()> {
                     return Ok(());
                 }
                 Err(e) => {
-                    // WebhookResponse::new("❌ 无效的PDF文件路径").render().await;
                     res.render(Json(serde_json::json!({
                         "status": 200,
                         "message": format!("❌ 无效的PDF文件路径: {}", e)
@@ -184,16 +211,35 @@ pub async fn workhook(req: &mut Request, res: &mut Response) -> Result<(), ()> {
                     return Err(());
                 }
             }
+        }
+        // 检查是否为文本搜索请求
+        else if webhook_req.detail.is_text_message() {
+            if let Some(search_text) = webhook_req.detail.get_text_content() {
+                // 立即返回响应，告知用户正在搜索
+                res.render(Json(serde_json::json!({
+                    "status": 200,
+                    "message": "🔍 收到搜索请求，正在处理中..."
+                })));
+
+                // 启动后台搜索工作流
+                let workflow = create_text_analysis_workflow(search_text, &webhook_req);
+                workflow.start_background_search();
+
+                return Ok(());
+            } else {
+                res.render(Json(serde_json::json!({
+                    "status": 200,
+                    "message": "❌ 无法解析文本内容"
+                })));
+            }
         } else {
-            // 非PDF文件，可以返回提示信息
-            // WebhookResponse::new("ℹ️ 请发送PDF文件进行分析").render().await;
+            // 非PDF文件也非文本消息，返回提示信息
             res.render(Json(serde_json::json!({
                 "status": 200,
-                "message": "ℹ️ 请发送PDF文件进行分析"
+                "message": "ℹ️ 请发送PDF文件进行分析，或发送文本进行搜索"
             })));
         }
     } else {
-        // WebhookResponse::new("❌ 无效的请求格式").render().await;
         res.render(Json(serde_json::json!({
             "status": 200,
             "message": "❌ 无效的请求格式"
@@ -214,18 +260,19 @@ pub async fn workhook_check(_req: &mut Request, res: &mut Response) -> Result<()
 }
 
 #[cfg(test)]
-mod tests{
+mod tests {
     use std::path::PathBuf;
 
     #[test]
     fn componet_path() {
         let path = "2025/8/7/e034f8aa-55e5-4a4e-8c93-3fc2f4f45c72";
-        let content_path = PathBuf::from(path)
-        .components()
-        .fold(PathBuf::new(), |mut acc, comp| {
-            acc.push(comp);
-            acc
-        });
+        let content_path =
+            PathBuf::from(path)
+                .components()
+                .fold(PathBuf::new(), |mut acc, comp| {
+                    acc.push(comp);
+                    acc
+                });
         dbg!(content_path.display());
     }
 }

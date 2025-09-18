@@ -1,7 +1,7 @@
 use std::{collections::HashMap, env::current_exe, fs, path::PathBuf};
 use serde::{Deserialize, Serialize};
 
-use crate::ai_text_analyzer::TextExtractionResult;
+use crate::{ai_text_analyzer::TextExtractionResult};
 
 /// 用户查询结构
 #[derive(Debug, Clone)]
@@ -965,6 +965,37 @@ fn fmt_diff_test(results: &Vec<DiffResult>) -> String {
 
     md
 }
+
+/// 执行搜索并返回 Markdown 格式的结果
+pub fn search_similar_results(query: &UserQuery) -> Result<String, String> {
+    // 获取所有模具数据
+    let models_dir = std::env::current_exe()
+        .map_err(|e| format!("获取执行目录失败: {}", e))?
+        .parent()
+        .ok_or("无法获取执行目录的父目录")?
+        .join("data")
+        .join("upload")
+        .join("file")
+        .join("models")
+        .join("jsons");
+    
+    let models = ModelJson::patch_new(models_dir)
+        .map_err(|e| format!("加载模具数据失败: {}", e))?;
+    
+    if models.is_empty() {
+        return Ok("未找到任何模具数据，请检查数据文件是否存在。".to_string());
+    }
+    
+    // 使用现有的 search_combined 方法
+    let search_results = ModelJson::search_combined(&models, query);
+    
+    // 使用现有的格式化方法
+    let markdown_result = format_search_results_to_md(&search_results);
+    
+    Ok(markdown_result)
+}
+
+
 
 #[cfg(test)]
 mod tests {
