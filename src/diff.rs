@@ -1,10 +1,110 @@
-use std::{collections::HashMap, env::current_exe, fs, io::Cursor, path::PathBuf};
-
-use base64::{Engine, prelude::BASE64_STANDARD};
-use image::ImageReader;
+use std::{collections::HashMap, env::current_exe, fs, path::PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::ai_text_analyzer::TextExtractionResult;
+
+/// 模具类型分组定义
+const MODEL_TYPE_GROUPS: &[&[&str]] = &[
+    &["夹板", "底板", "绝缘隔板", "绝缘板", "衔铁托板", "外板", "定位件", "磁体盖", "固定板"],
+    &["衔铁组件", "组件", "动组件", "动簧片组件"],
+    &["基座", "上基座", "外基座", "内基座", "底座"],
+    &["推杆", "推片", "推动片"],
+    &["骨架", "线圈架"],
+];
+
+/// 标准化模具类型名称，去除前缀后缀
+fn normalize_model_type(model_type: &str) -> String {
+    let model_type = model_type.trim();
+    
+    // 去除常见的前缀和后缀模式
+    let mut normalized = model_type.to_string();
+    
+    // 去除型号后缀（如 -047, -H, -W 等）
+    if let Some(dash_pos) = normalized.rfind('-') {
+        let after_dash = &normalized[dash_pos + 1..];
+        // 如果破折号后面是数字、字母组合或单个字母，则去除
+        // 扩大范围以处理像 "1A型" 这样的情况
+        if after_dash.chars().all(|c| c.is_alphanumeric() || c == '型') && after_dash.len() <= 6 {
+            normalized = normalized[..dash_pos].to_string();
+        }
+    }
+    
+    // 去除括号内容（如 (60A), (C型) 等）
+    if let Some(paren_pos) = normalized.find('(') {
+        normalized = normalized[..paren_pos].trim().to_string();
+    }
+    
+    // 去除常见前缀（如 HAT904G, HAG12 等产品代码）
+    let prefixes_to_remove = ["HAT904G", "HAT902", "HAT905G", "HAG02", "HAG12", "ZC75N", "Y3F"];
+    for prefix in &prefixes_to_remove {
+        if normalized.starts_with(prefix) {
+            normalized = normalized[prefix.len()..].trim().to_string();
+            break;
+        }
+    }
+    
+    // 去除其他常见词汇
+    let words_to_remove = ["护套", "外壳", "盖板", "支架", "组件"];
+    for word in &words_to_remove {
+        if normalized.ends_with(word) && normalized.len() > word.len() {
+            normalized = normalized[..normalized.len() - word.len()].trim().to_string();
+        }
+    }
+    
+    normalized.trim().to_string()
+}
+
+/// 获取模具类型所属的分组
+fn get_model_type_group(model_type: &str) -> Option<usize> {
+    let normalized = normalize_model_type(model_type);
+    
+    for (group_index, group) in MODEL_TYPE_GROUPS.iter().enumerate() {
+        for &standard_type in *group {
+            // 检查标准化后的类型是否包含分组中的标准类型
+            if normalized.contains(standard_type) || standard_type.contains(&normalized) {
+                return Some(group_index);
+            }
+        }
+    }
+    None
+}
+
+/// 计算模具类型相似度，考虑分组和标准化
+fn calculate_model_type_similarity(type1: &str, type2: &str) -> f32 {
+    // 如果完全相同，返回最高相似度
+    if type1 == type2 {
+        return 1.0;
+    }
+    
+    let normalized1 = normalize_model_type(type1);
+    let normalized2 = normalize_model_type(type2);
+    
+    // 标准化后完全相同，相似度很高但稍低于完全匹配
+    if normalized1 == normalized2 {
+        return 0.95;
+    }
+    
+    // 检查是否属于同一分组
+    let group1 = get_model_type_group(type1);
+    let group2 = get_model_type_group(type2);
+    
+    match (group1, group2) {
+        (Some(g1), Some(g2)) if g1 == g2 => {
+            // 同一分组内，根据标准化后的文本相似度计算
+            let text_similarity = improved_diff_text(&normalized1, &normalized2);
+            // 同组内相似度基础分 0.6，加上文本相似度的 40%
+            0.6 + text_similarity * 0.4
+        }
+        (Some(_), Some(_)) => {
+            // 不同分组，但都是已知类型，相似度为0
+            0.0
+        }
+        _ => {
+            // 至少有一个不在已知分组中，使用原始文本比较
+            improved_diff_text(type1, type2) * 0.5 // 未知类型降权
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelJson {
@@ -76,14 +176,14 @@ impl ModelJson {
         let mut results = Vec::new();
 
         for (model_type, model_info) in models {
-            // 进行模具类型比较，优先全词匹配
-            let model_type_diff = improved_diff_text(
+            // 使用改进的模具类型相似度计算
+            let model_type_diff = calculate_model_type_similarity(
                 &model_type,
                 &(model.model_type.clone().unwrap_or("unknown".to_string())),
             );
 
             // 如果模具类型相似度太低，直接跳过
-            if model_type_diff < 0.1 {
+            if model_type_diff < 0.15 {
                 continue;
             }
 
@@ -460,8 +560,6 @@ fn fmt_diff_test(results: &Vec<DiffResult>) -> String {
     md.push_str("对该pdf文件进行相似度比较的结果如下:\n");
     let img_dir =
         PathBuf::from("D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\imgs");
-    // 处理表格
-    // 如果相似度低于50%没有必要处理
     let result_table: String = results
         .iter()
         .take(if results.len() >= 10 {
@@ -476,17 +574,25 @@ fn fmt_diff_test(results: &Vec<DiffResult>) -> String {
             if !img_path.exists() {
                 return None;
             }
-            let img = ImageReader::open(img_path).ok()?.decode().ok()?;
-            let mut img_bytes = Vec::new();
-            img.write_to(&mut Cursor::new(&mut img_bytes), image::ImageFormat::Png)
-                .ok()?;
-            let base64_image = BASE64_STANDARD.encode(img_bytes);
-
+            
             Some(
                 MD_TABLE
                     .replace("{$source}", &res.source_name)
                     .replace("{$percentage}", &format!("{:.2}", res.percentage * 100.0))
-                    .replace("${base64_image}", &base64_image),
+                    .replace(
+                        "${img_path}",
+                        &format!(
+                            "https://huateng.voce.chat/api/resource/file?file_path=models/imgs/{}/{}_page_001",
+                            &res.source_name, &res.source_name
+                        ),
+                    )
+                    .replace(
+                        "${href}",
+                        &format!(
+                            "http://45.76.31.59:3009/#/compare?file_path={}",
+                            res.source_name
+                        ),
+                    ),
             )
         })
         .collect();
@@ -528,7 +634,7 @@ mod tests {
     fn diff() {
         // D:\work\material\output\json\208T-03_A基座-A3_Model_1_text_data.json
         let model = ModelJson::new(PathBuf::from(
-            "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\jsons\\ME121基座_text_data.json",
+            "D:\\work\\material_rs\\target\\debug\\data\\upload\\file\\models\\jsons\\HJ034-2PZL内基座_text_data.json",
         ))
         .unwrap();
         let models = ModelJson::patch_new(PathBuf::from(
@@ -538,9 +644,11 @@ mod tests {
         let sorted_models = ModelJson::sort(models);
         let mut res = ModelJson::diff(sorted_models, model);
         DiffResult::sort(&mut res);
-        let res = fmt_diff_result_to_md(&res);
-        let md_file = "D:\\work\\material_rs\\test.md";
-        fs::write(md_file, res).expect("Failed to write markdown file");
+        
+        let res = fmt_diff_test(&res);
+        dbg!(&res);
+        // let md_file = "D:\\work\\material_rs\\test.md";
+        // fs::write(md_file, res).expect("Failed to write markdown file");
     }
 
     #[test]
@@ -624,6 +732,83 @@ mod tests {
         println!("PBT vs PBT-RG301: {}", similarity1);
         println!("PBT-RG301 vs PBT-RG302: {}", similarity2);
         println!("PBT vs ABS: {}", similarity3);
+    }
+
+    #[test]
+    fn test_normalize_model_type() {
+        // 测试去除型号后缀
+        assert_eq!(normalize_model_type("基座-047"), "基座");
+        assert_eq!(normalize_model_type("外壳-H"), "外壳");
+        assert_eq!(normalize_model_type("上盖-050"), "上盖");
+        
+        // 测试去除括号内容
+        assert_eq!(normalize_model_type("底座(1常开1常闭型)"), "底座");
+        assert_eq!(normalize_model_type("ZC75N基座(60A-ASSLY带护针)"), "基座");
+        
+        // 测试去除产品代码前缀
+        assert_eq!(normalize_model_type("HAT904G 基座"), "基座");
+        assert_eq!(normalize_model_type("HAG12线圈架"), "线圈架");
+        assert_eq!(normalize_model_type("Y3F骨架"), "骨架");
+        
+        // 测试复杂情况
+        assert_eq!(normalize_model_type("HAT904G 外壳"), "外壳");
+        assert_eq!(normalize_model_type("基座-1A型"), "基座");
+    }
+
+    #[test]
+    fn test_get_model_type_group() {
+        // 测试基座分组
+        assert_eq!(get_model_type_group("基座"), Some(2));
+        assert_eq!(get_model_type_group("上基座"), Some(2));
+        assert_eq!(get_model_type_group("HAT904G 基座"), Some(2));
+        
+        // 测试骨架分组
+        assert_eq!(get_model_type_group("骨架"), Some(4));
+        assert_eq!(get_model_type_group("线圈架"), Some(4));
+        assert_eq!(get_model_type_group("HAG12线圈架"), Some(4));
+        
+        // 测试组件分组
+        assert_eq!(get_model_type_group("衔铁组件"), Some(1));
+        assert_eq!(get_model_type_group("动簧片组件"), Some(1));
+        
+        // 测试未知类型
+        assert_eq!(get_model_type_group("未知类型"), None);
+    }
+
+    #[test]
+    fn test_calculate_model_type_similarity() {
+        // 测试完全相同
+        assert_eq!(calculate_model_type_similarity("基座", "基座"), 1.0);
+        
+        // 测试标准化后相同
+        let sim1 = calculate_model_type_similarity("基座-047", "基座");
+        assert!((sim1 - 0.95).abs() < 0.01);
+        
+        // 测试同组内相似
+        let sim2 = calculate_model_type_similarity("基座", "上基座");
+        assert!(sim2 > 0.6 && sim2 < 1.0);
+        
+        // 测试不同组 - 现在应该是0.0
+        let sim3 = calculate_model_type_similarity("基座", "骨架");
+        assert_eq!(sim3, 0.0);
+        
+        // 测试复杂情况
+        let sim4 = calculate_model_type_similarity("HAT904G 基座", "基座-047");
+        assert!(sim4 > 0.9);
+        
+        // 测试更多不同分组的情况
+        let sim5 = calculate_model_type_similarity("衔铁组件", "推杆");
+        assert_eq!(sim5, 0.0);
+        
+        let sim6 = calculate_model_type_similarity("底板", "线圈架");
+        assert_eq!(sim6, 0.0);
+        
+        println!("基座-047 vs 基座: {}", sim1);
+        println!("基座 vs 上基座: {}", sim2);
+        println!("基座 vs 骨架: {}", sim3);
+        println!("HAT904G 基座 vs 基座-047: {}", sim4);
+        println!("衔铁组件 vs 推杆: {}", sim5);
+        println!("底板 vs 线圈架: {}", sim6);
     }
 
     #[test]
