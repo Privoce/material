@@ -1,5 +1,5 @@
 use std::{path::PathBuf, sync::Arc};
-use tokio::{task, sync::Notify, time::interval};
+use tokio::{sync::Notify, task, time::interval};
 use tracing::{error, info, warn};
 
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
     ai_text_analyzer::AiTextAnalyzer,
     api::pdf::{WebhookRequest, convert_to_image},
     config::AiConfig,
-    diff::{DiffResult, ModelJson, fmt_diff_result_to_md, UserQuery, search_similar_results},
+    diff::{DiffResult, ModelJson, UserQuery, fmt_diff_result_to_md, search_similar_results},
 };
 
 /// PDF 分析工作流
@@ -34,7 +34,7 @@ impl PdfAnalysisWorkflow {
         let webhook_url = self.webhook_url.clone();
         let api_key = self.api_key.clone();
         let notifier = self.analysis_complete_notifier.clone();
-        
+
         // 启动分析任务
         let analysis_task = {
             let self_clone = PdfAnalysisWorkflow {
@@ -47,16 +47,20 @@ impl PdfAnalysisWorkflow {
                 self_clone.run_analysis().await;
             })
         };
-        
+
         // 启动定时通知任务
         let notification_task = task::spawn(async move {
             // 发送初始通知
-            Self::send_notification(&webhook_url, &api_key, 
-                "📄 PDF分析已开始，预计需要30秒或更多时间，请耐心等待...").await;
-            
+            Self::send_notification(
+                &webhook_url,
+                &api_key,
+                "📄 PDF分析已开始，预计需要30秒或更多时间，请耐心等待...",
+            )
+            .await;
+
             let mut counter = 1;
             let mut interval = interval(std::time::Duration::from_secs(15));
-            
+
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
@@ -71,7 +75,7 @@ impl PdfAnalysisWorkflow {
                 }
             }
         });
-        
+
         // 确保两个任务都完成
         task::spawn(async move {
             let _ = tokio::join!(analysis_task, notification_task);
@@ -95,7 +99,7 @@ impl PdfAnalysisWorkflow {
                     .await;
             }
         }
-        
+
         // 通知定时任务分析已完成
         self.analysis_complete_notifier.notify_one();
     }
@@ -163,11 +167,11 @@ impl PdfAnalysisWorkflow {
             }
         }
     }
-    
+
     /// 发送通知消息（静态方法）
     async fn send_notification(webhook_url: &str, api_key: &str, message: &str) {
         let client = reqwest::Client::new();
-        
+
         match client
             .post(webhook_url)
             .header("content-type", "text/plain")
@@ -249,15 +253,15 @@ impl TextAnalysisWorkflow {
     async fn perform_search(&self) -> Result<String, String> {
         info!("🔍 正在解析搜索查询...");
         let user_query = UserQuery::parse(&self.search_text);
-        
+
         // 检查是否为有效的搜索查询
         if user_query.model_type.is_none() && user_query.materials.is_empty() {
-            return Ok("🔍 请使用以下格式进行搜索：\n- model_type: 基座;\n- material: PBT RG301;\n\n或组合搜索：\n- model_type: 基座; - material: PBT RG301;".to_string());
+            return Ok(AI_BOT_SEARCH.to_string());
         }
 
         info!("📊 正在执行搜索...");
         let result = search_similar_results(&user_query)?;
-        
+
         info!("✅ 搜索完成");
         Ok(result)
     }
@@ -287,6 +291,16 @@ impl TextAnalysisWorkflow {
         }
     }
 }
+
+const AI_BOT_SEARCH: &str = r#"
+您可以直接使用以下方式让AI BOT帮您进行搜索：
+```
+1. 查找类型：`- model_type: 夹板;`
+2. 查找材料：`- material: PBT RG301;`
+3. 查找类型和材料：`- model_type: 夹板; - material: PBT RG301;`
+4. 多个材料：`- material: PBT RG301, PA66 GF30;`
+```
+"#;
 
 /// 创建并启动文本分析工作流
 pub fn create_text_analysis_workflow(

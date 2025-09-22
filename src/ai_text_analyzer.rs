@@ -75,36 +75,19 @@ impl AiTextAnalyzer {
 请仔细分析这张模具图片，提取所有可见的文字信息，特别关注模具的基本信息。
 
 **重点提取内容：**
-1. 模具类型/零件类型 - 通常在标题栏或图纸名称处，通常名为名称, 详细类型如下:
+1. 模具类型/零件类型 - 通常在标题栏或图纸名称处，通常名为名称, 需要完整读出, 主要类型如下:
 ```
-["基座-H", "外基座", "防尘盖", "线轮 Bobbin", "上盖-037", "支架", "衔铁组件-026", "R53G 底板(60A)", "HAG12线架", "外壳-W", 
-"HAT904G 基座", "基座-049", "罩壳", "防水塞", "HAT902-ET外壳 (C型)", "H157S护套", "HAG02动衔组件", "HAT905G底板", "Plug外壳", 
-"HAT904G 外壳", "头外壳", "固定板", "外壳-H", "辅助开关底座", "基座-1A型", "ZC75N基座", "上盖-050", "HAGO2动衔连接件", "保 险丝盖板", 
-"Plug盖板", "塞子", "基座盖板", "推动杆", "上盖", "推片", "ZC75N后盖", "线圈支架-032", "枪头后盖", "底座", "95316-3底板B模", "前基座", 
-"安装板外壳", "线轮", "推板-034", "控制盒上壳", "C型基座", "固定板-025", "HAG12支撑座", "Y3F-外壳", " 底板", "拉带", "上基座", "座外壳", 
-"线圈架-W", "ZC75N基座(60A-ASSLY带护针)", "NTC基座", "内基座", "线圈架", "基座-042", "底 座(1常开1常闭型)", "推杆", "上盖-048", "衔铁托板", 
-"隔弧片", "骨架", "衔铁组件", "Y3F-顶面孔外壳", "底座(组常开型)", "HAT904G 骨架", "尾盖", "HAG12线圈架", "Header外壳", "动簧片组件", 
-"SHG.SPRC2C.P03-1", "Y3F骨架", "外壳", "绝缘片", "基座", "基座-038", "基座-047", "上盖004", "Header盖板", "外盖"]
+[
+    "基座", "外壳", "盖", "后盖", "上盖", "下盖", "线圈架", "线架", "骨架", "线轮", "衔铁", "动簧片", "动片", "推杆", 
+    "推动件", "支架", "固定件", "卡扣", "拉伸件", "连接器", "插座", "母座", "信号基座", "插头", "按钮", "塞子", "小件"
+]
 ```
-2. 材料/材质信息 - 可能标注为"材料"、"材质"、"Material"等，材料需要完整读出，包括后面跟着的型号, 详细材料有：
+2. 材料/材质信息 - 可能标注为"材料"、"材质"、"Material"等，材料需要完整读出，包括后面跟着的型号, 主要类型的材料有：
 ```
-["PET FR530 BLACK BY DUPONT", "尼龙 PA66 K225-KS 黑色 (帝斯曼)", "MZCA-H", "UL746C", "PBT 543", "PBT RG301 BK", "PA66 RG301 黑色", "LCP-4008 (黑色)", 
-"PA66 NPG30 黑色", "PBT", "PBT-RG301 黑色阻燃等级：V-0", "PET T102G30 TH3013", "PBT 4130", "PBT R212G30GT OG", "PC 3001-33201 黑色 沃特 UL94V-0 f1", 
-"PA6 C0-FKGS6 黑色", "PET FR530", "RoHS UL94 V-0", "尼龙 PC FR7沙伯基础", "PA66-B30", "E202G30", "PBT RG301 BK165 UL94 V-0 RoHS 黑色 (金发)", "PBT 102G30 TH3013", 
-"PAG K-FX56/B", "PBT RG530 黑色", "南亚 PBT 1403G6 (黑色)", "PET-FR530 黑色 (再生材35%)", "PA6 K-FKGS6/B 黑色 UL94-V0 DSM", "DT4E", "PBT 3316", "LCP E130i", 
-"PET T102G30 TH3013 BK", "PBT FR530 黑色", "PBT E202G30(黑色)", "PBT RG301", "PET FR533NH 本色", "尼龙PA66 FR50 BK086", "PBT FR530 BK", "5010GN6-30MBX", "PET FR530 黑色", 
-"尼龙 PA66 RG251 (F1) 黑色 UL94 V-0", "PBT RG301 (白色)", "PC PC3001-33201L 黑色 BK", "新光 PBT D202G30@ (黑色)", "尼龙 PC 121R", "UL94V-0", "衔铁 DT4E", "Lkh7.810.538", 
-"UL746C f1 K-FK6G/B DSM", "PBT RG301 黑色", "PBT 201G20 BK", "UL746C F1 L/P/SS/D DSM", "PBT 5010GN6-30MBX", "PEI1000", "PA66 T303 G30 VO BK", "PET FR530 BLACK", "PTFE T1026M T18013", 
-"阻燃等级：V-0", "PA66 HTNFR52G30NH或PA66-A3 GF25 VOX1", "PBT RG301 蓝色", "塑料 PBT RG301", "PBT 3316 (黑色阻燃)", "PPS R-7", "金发PBT RG301(白)", "东方PET", "UL94 V-0 RoHS (美国杜邦)", 
-"HYZ01-2X3T", "PBT R212G30GT NC", "PET RG305 BLACK", "PET FRG30 BLACK BY DUPONT", "金发 PBT RG301(黑)", "PA4T", "尼龙 PA6-GF30", "C17410", "PET RG301 黑色", "尼龙 PA6 GF30 FR (17)", 
-"PBT-RG301 黑色", "LCP E4008 BK", "Lk17.810.541", "PET RG305", "PBT RG301 (黑色)", "PPS B4200 G8 BK", "PA66 A3 GF25 VOX1(本色)", "PET FR530NH或PA4T TX-1", "PPA AFA6133 (本)", "PBT G30 白色", 
-"金发 PBT RG301白", "LCP E4008", "PA46-GF30 TE250F6 黑色 UL94V-0", "PPS 6165 A6/A7 BLACK BY POLYPLASTIC", "PET FRF520", "PBT RG301 白色", "LCP E130i 黑色", "PBT 1403G6 黑色", "HY050-ZS1S-K", 
-"PBT 3316 黑色 UL94 V-0", "PET-FR530", "尼龙 PA66 RG251 (f1) 黑色 UL94 V-0", "PA66+GF A26FM0 黑色", "尼龙 PA66 FR50", "PAG K-FXG56/B", "PA46", "PBT 5010GNG6-30M8X", "PA66 RPG25", "PBT RG301（黑）", 
-"PBT T102G30 TH3013", "DSM尼龙 PA6 K-FKGS6/B 黑色 BK26037", "UL94 HB", "PA46 TE250F8", "南亚PBT 1403 G6(黑)", "PBT R0301", "磁钢 镍铁氧体", "PBT RG301+30GF 黑色", "PBT R212G30GT BK", "尼龙 PA66 EPR27", 
-"PBT RG301 BLACK BY KINGFA", "PPS 4500 BK", "PET T102G30", "PC PC3001-33201L BK 黑色", "PBT 3316 黑色", "PBT 5010GN6-30 M6X黑色", "PBT 1403G6", "PBT 4130-104F", "尼龙 PA6-GF30 FR (17)", "PBT 4130(FNGW)", 
-"PBT 5010G6N6-30 MBX", "PBT4130-104K", "PBT 4130-104K", "尼龙 PA6 K-FKGS6 绿色 PANTONE 7730C UL94 V-0 (DSM)", "PBT 4130 黑色 防紫外线", "PET EMC 130-20", "PBT4130-104F", "PET FR530 BK", "PPS R-4 黑色", 
-"PBT E202630(黑色)", "PAA6+GF A26FM0 黑色", "PET-FR531", "PBT 4130 黑色", "PBT 5010GN6 BK", "PBT 3316 BK", "C18150-R540", "PA6 K-FKGS6 黑色 DSM UL94V-0", "PET FG550 BK", "PBT 1430", "PBT RG530 白色", 
-"再生材 黑色", "UL94 V-0", "PBT FR530", "PET FR530 本色", "TPE EFT85B030MB-B 黑色", "PET FR830 BLACK", "尼龙 PA6-30GF, K-PESS6/B", "PBT 1430G6"]
+[
+    "PBT", "PET", "PA66", "PA6", "PA46", "PC", "LCP", "PPS", "PPA", "PEI", "PTFE", "PA4T", "TPE",
+    "ABS", "POM", "PE", "PA6T", "PA10T", "PAG", "PVC", "SUS", "PA", "尼龙", "衔铁", "磁钢", "再生材",
+]
 ```
 3. 项目名称或称为型号
 
